@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  street       String
+  city         String
+  state        String
+  zipcode      String
+
+  members      Member[] @relation("UserMembers")
+  votes        Vote[]
+}
+
+model Member {
+  id           String        @id
+  name         String
+  area         String
+  party        String
+  phone        String
+  photoURL     String
+  reason       String
+  state        String
+  url          String
+  district     Int?
+
+  fieldOffices FieldOffice[]
+  users        User[]        @relation("UserMembers")
+  memberVotes  MemberVote[]
+}
+
+model FieldOffice {
+  id        Int     @id @default(autoincrement())
+  memberId  String
+  member    Member  @relation(fields: [memberId], references: [id])
+}
+
+model Vote {
+  id      Int      @id @default(autoincrement())
+  userId  Int
+  billId  String
+  vote    String
+  date    DateTime
+
+  user    User     @relation(fields: [userId], references: [id])
+}
+
+model MemberVote {
+  id         Int      @id @default(autoincrement())
+  billId     String
+  vote       String
+  date       DateTime
+
+  bioguideId String
+  member     Member   @relation(fields: [bioguideId], references: [id])
+}
