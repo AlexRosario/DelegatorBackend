@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import dotenv from 'dotenv';
 import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
 
 dotenv.config();
 
@@ -51,6 +52,39 @@ router.get('/member/:bioID', async (req, res) => {
 	} catch (err) {
 		console.error('Congress search API error:', err);
 		res.status(500).json({ error: 'Failed to search bills' });
+	}
+});
+router.get('/extract-text', async (req, res) => {
+	const { url } = req.query;
+	if (!url) {
+		return res.status(400).json({ error: 'URL is required' });
+	}
+	try {
+		if (typeof url !== 'string') {
+			return res.status(400).json({ error: 'URL must be a string' });
+		}
+		const response = await fetch(url);
+		if (!response.ok) {
+			return res.status(response.status).json({ error: 'Failed to fetch bill text' });
+		}
+		const html = await response.text();
+
+		const $ = cheerio.load(html);
+		let billText = $('pre').text().trim();
+		if (!billText) {
+			billText = $('.billTextContent').text();
+		}
+
+		billText = billText.trim();
+
+		if (!billText) {
+			return res.status(500).json({ error: 'Could not extract bill text' });
+		}
+
+		return res.json({ text: billText });
+	} catch (err) {
+		console.error('Error extracting bill text:', err);
+		res.status(500).json({ error: 'Failed to extract bill text' });
 	}
 });
 

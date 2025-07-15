@@ -7,6 +7,8 @@ import { repController } from './src/router/rep.router';
 import positionstackRoutes from './src/router/external/positionstack.router';
 import fiveCallsRoutes from './src/router/external/fivecalls.router';
 import congressGovRoutes from './src/router/external/congressgov.router';
+import chatgptRoutes from './src/router/external/chatgpt.router';
+
 const app = express();
 
 app.use(
@@ -63,6 +65,8 @@ app.get('/api/senate-roll-call/:rollId/:congress/:session', async (req, res) => 
 app.use('/location', positionstackRoutes);
 app.use('/fiveCallsRoutes', fiveCallsRoutes);
 app.use('/congressGovRoutes', congressGovRoutes);
+app.use('/chatgptRoutes', chatgptRoutes);
+
 app.use(authController);
 app.use(voteController);
 app.use(repController);
