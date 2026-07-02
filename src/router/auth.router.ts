@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import 'express-async-errors';
-import { loginSchema, registerSchema } from '../zod';
+import { loginSchema, registerSchema } from '../zodSchema';
 import { encryptPassword } from '../utils/auth-utils';
 import { validateRequest } from 'zod-express-middleware';
 import bcrypt from 'bcrypt';
@@ -36,7 +36,7 @@ authController.post('/auth/register', validateRequest(registerSchema), async (re
 			state: address.state,
 			zipcode: address.zipcode,
 			members: {
-				connect: memberIds.map((id) => ({ id })),
+				connect: memberIds.map((id: string) => ({ id })),
 			},
 		},
 	});
@@ -48,8 +48,9 @@ authController.post('/auth/register', validateRequest(registerSchema), async (re
 });
 
 authController.get('/logout', async (_req, res) => {
-	localStorage.removeItem('token');
-	localStorage.removeItem('user');
+	// Tokens are stored client-side; the server has no session to clear. The
+	// client should drop its token/user on logout. (Previously this called
+	// `localStorage`, which is undefined in Node and threw on every request.)
 	res.status(200).json({ message: 'Logout successful' });
 });
 

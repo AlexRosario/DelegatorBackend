@@ -42,9 +42,15 @@ repController.get('/members/:bioguideId', async (req, res) => {
 		return res.status(500).json({ message: 'Internal server error' });
 	}
 });
-repController.get('/members', async (_req, res) => {
+repController.get('/members', async (req, res) => {
+	// Default to the current roster (congress.gov ingest). Historical bill
+	// sponsors live in the same table; pass ?all=true to include them.
+	const includeAll = req.query.all === 'true';
 	try {
-		const reps = await prisma.member.findMany();
+		const reps = await prisma.member.findMany({
+			where: includeAll ? undefined : { currentMember: true },
+			orderBy: { name: 'asc' },
+		});
 		return res.status(200).json(reps);
 	} catch (error) {
 		console.error('Error fetching representatives:', error);
@@ -60,6 +66,8 @@ repController.post('/members', async (req, res) => {
 		if (existingMember) {
 			return res.status(200).json(existingMember);
 		}
+		// Fallback create: a 5Calls rep not (yet) in the congress.gov roster. Tag
+		// it accordingly; the daily roster ingest will enrich/own it if present there.
 		const newRep = await prisma.member.create({
 			data: {
 				id,
@@ -72,6 +80,8 @@ repController.post('/members', async (req, res) => {
 				district: district ?? null, // optional, since senators don't have it
 				reason,
 				area,
+				source: 'fivecalls',
+				currentMember: false,
 				fieldOffices: fieldOffices ? { create: fieldOffices } : undefined,
 			},
 		});

@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import prisma from '../../prisma/prisma';
 import { validateRequest } from 'zod-express-middleware';
-import { voteSchema, memberVoteSchema } from '../zod';
+import { voteSchema, memberVoteSchema } from '../zodSchema';
 import { getDataFromToken } from '../utils/auth-utils';
 import { JwtPayload } from 'jsonwebtoken';
 

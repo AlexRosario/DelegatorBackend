@@ -1,6 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
+// ==========================
+// Prisma setup
+// ==========================
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,6 +10,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+//
+// ==========================
+// Users
+// ==========================
 model User {
   id           Int      @id @default(autoincrement())
   username     String   @unique
@@ -24,29 +28,107 @@ model User {
   votes        Vote[]
 }
 
+//
+// ==========================
+// Members (legislators)
+// ==========================
 model Member {
-  id           String        @id
+  id           String        @id // bioguideId
   name         String
-  area         String
+  firstName    String?
+  lastName     String?
   party        String
   phone        String
   photoURL     String
-  reason       String
   state        String
   url          String
   district     Int?
 
+  chamber       String?  // House | Senate
+  officeAddress String?  // DC office (from congress.gov)
+  currentMember Boolean  @default(false) // roster member vs. historical bill sponsor
+
+  // Per-user / 5Calls context — optional, never written by the roster ingest.
+  area         String?
+  reason       String?
+
+  source        String?  // "fivecalls" | "congressgov" | "merged"
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
   fieldOffices FieldOffice[]
   users        User[]        @relation("UserMembers")
   memberVotes  MemberVote[]
+  rollCallVotes RollCallVote[]
+  sponsoredBills Bill[]       @relation("BillSponsor")
 }
 
 model FieldOffice {
-  id        Int     @id @default(autoincrement())
+  id        Int    @id @default(autoincrement())
   memberId  String
-  member    Member  @relation(fields: [memberId], references: [id])
+  member    Member @relation(fields: [memberId], references: [id])
+
+  address   String?
+  city      String?
+  state     String?
+  zipcode   String?
+  phone     String?
 }
 
+//
+// ==========================
+// Bills (NEW – primary entity)
+// ==========================
+model Bill {
+  id              String   @id
+  congress        Int
+  billType        String
+  billNumber      String
+
+  title           String
+  summary         String?
+
+  // Claude "explain like I'm 12" translation — computed once (paid) and cached
+  // here so every later reader gets it free (no repeat LLM calls).
+  plainSummary      String?
+  plainSummaryModel String?   // which model produced it (provenance)
+  plainSummaryAt    DateTime? // when it was generated
+
+  status          String?   // coarse label (latestAction text)
+  stage           String?   // where in the legislative process (derived from actions)
+  actions         Json?     // full action history incl. recordedVotes (roll calls)
+
+  chamber         String?   // House | Senate
+  originChamber   String?
+  policyArea      String?
+  subjects        Json?     // string[] (SQLite has no scalar list type)
+  cosponsorCount  Int?
+
+  congressGovUrl  String?   // canonical congress.gov link
+  textVersionUrl  String?   // link to bill text (feeds /extract-text + simplifier)
+
+  latestActionText String?
+  latestActionDate DateTime?
+  introducedDate  DateTime?
+  lastActionDate  DateTime?
+
+  sponsorBioguideId String?
+  sponsor         Member?   @relation("BillSponsor", fields: [sponsorBioguideId], references: [id])
+
+  rollCalls       RollCall[]
+  userVotes       Vote[]
+  enrichment      BillEnrichment?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([congress, billType, billNumber])
+}
+
+//
+// ==========================
+// User votes on bills
+// ==========================
 model Vote {
   id      Int      @id @default(autoincrement())
   userId  Int
@@ -55,8 +137,16 @@ model Vote {
   date    DateTime
 
   user    User     @relation(fields: [userId], references: [id])
+  bill    Bill     @relation(fields: [billId], references: [id])
+
+  @@unique([userId, billId])
 }
 
+//
+// ==========================
+// Legacy / optional member vote table
+// (can coexist with roll calls)
+// ==========================
 model MemberVote {
   id         Int      @id @default(autoincrement())
   billId     String
@@ -65,4 +155,58 @@ model MemberVote {
 
   bioguideId String
   member     Member   @relation(fields: [bioguideId], references: [id])
+}
+
+//
+// ==========================
+// Roll calls (NEW – voting events)
+// ==========================
+model RollCall {
+  id          Int      @id @default(autoincrement())
+  billId      String
+  chamber     String   // House | Senate
+  rollNumber  Int
+  date        DateTime
+  question    String
+  result      String
+
+  bill        Bill     @relation(fields: [billId], references: [id])
+  votes       RollCallVote[]
+
+  @@unique([billId, chamber, rollNumber])
+}
+
+//
+// ==========================
+// Individual roll call votes (NEW)
+// ==========================
+model RollCallVote {
+  id           Int      @id @default(autoincrement())
+  rollCallId   Int
+  bioguideId   String
+  party        String
+  vote         String   // Yea | Nay | Present | Not Voting
+
+  rollCall     RollCall @relation(fields: [rollCallId], references: [id])
+  member       Member?  @relation(fields: [bioguideId], references: [id])
+
+  @@unique([rollCallId, bioguideId])
+}
+
+model IngestionRun {
+  id        Int      @id @default(autoincrement())
+  job       String   // "daily-bills" | "rep-refresh" | etc
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+  status    String   // "running" | "success" | "failed"
+  message   String?
+}
+
+model BillEnrichment {
+  billId     String  @id
+  bill       Bill    @relation(fields: [billId], references: [id])
+  status     String  // "pending" | "done" | "failed"
+  attempts   Int     @default(0)
+  lastError  String?
+  updatedAt  DateTime @updatedAt
 }
