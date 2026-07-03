@@ -5,7 +5,7 @@ const congressGovClient_1 = require("../services/congressGovClient");
 const ingestBill_1 = require("./ingestBill");
 const PAGE_SIZE = 250;
 async function ingestBillsBatch(params) {
-    let offset = 0;
+    let offset = params.startOffset ?? 0;
     let processed = 0;
     let failed = 0;
     const reachedCap = () => params.maxBills !== undefined && processed + failed >= params.maxBills;

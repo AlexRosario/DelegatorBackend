@@ -10,8 +10,10 @@ export async function ingestBillsBatch(params: {
 	fromDateTime?: string;
 	/** Cap total bills ingested (bounded test/validation runs). */
 	maxBills?: number;
+	/** Skip the first N bills in congress.gov's ordering (resume/extend runs). */
+	startOffset?: number;
 }) {
-	let offset = 0;
+	let offset = params.startOffset ?? 0;
 	let processed = 0;
 	let failed = 0;
 
