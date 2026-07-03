@@ -11,7 +11,6 @@ import { runDailyMemberIngest } from './src/workers/dailyMemberIngest';
 
 import positionstackRoutes from './src/router/external/positionstack.router';
 import fiveCallsRoutes from './src/router/external/fivecalls.router';
-import congressGovRoutes from './src/router/external/congressgov.router';
 import translateRoutes from './src/router/external/translate.router';
 
 const app = express();
@@ -64,7 +63,6 @@ app.get('/api/roll-call', async (req, res) => {
 
 app.use('/location', positionstackRoutes);
 app.use('/fiveCallsRoutes', fiveCallsRoutes);
-app.use('/congressGovRoutes', congressGovRoutes);
 app.use('/translate', translateRoutes);
 
 app.use(authController);

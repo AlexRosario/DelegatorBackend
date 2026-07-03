@@ -15,7 +15,6 @@ const dailyBillIngest_1 = require("./src/workers/dailyBillIngest");
 const dailyMemberIngest_1 = require("./src/workers/dailyMemberIngest");
 const positionstack_router_1 = __importDefault(require("./src/router/external/positionstack.router"));
 const fivecalls_router_1 = __importDefault(require("./src/router/external/fivecalls.router"));
-const congressgov_router_1 = __importDefault(require("./src/router/external/congressgov.router"));
 const translate_router_1 = __importDefault(require("./src/router/external/translate.router"));
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)({
@@ -61,7 +60,6 @@ app.get('/api/roll-call', async (req, res) => {
 });
 app.use('/location', positionstack_router_1.default);
 app.use('/fiveCallsRoutes', fivecalls_router_1.default);
-app.use('/congressGovRoutes', congressgov_router_1.default);
 app.use('/translate', translate_router_1.default);
 app.use(auth_router_1.authController);
 app.use(vote_router_1.voteController);

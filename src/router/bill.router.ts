@@ -1,17 +1,21 @@
 import { Router } from 'express';
 import 'express-async-errors';
+import { Prisma } from '@prisma/client';
 import prisma from '../../prisma/prisma';
 import { getFullBill, getBillSummaries, getBillSubjects, getBillTextVersions, getBillActions } from '../services/congressGovClient';
 
 const billController = Router();
+
+/** A Bill row loaded with its sponsor — the shape both endpoints query. */
+type BillWithSponsor = Prisma.BillGetPayload<{ include: { sponsor: true } }>;
 
 /**
  * Map a stored Bill row into the congress.gov-ish shape the frontend already
  * consumes, so the app can read pre-assembled bills from our DB instead of
  * fanning out to the live proxy per bill.
  */
-function serializeBill(row: any) {
-	const subjectNames: string[] = Array.isArray(row.subjects) ? row.subjects : [];
+function serializeBill(row: BillWithSponsor) {
+	const subjectNames: string[] = Array.isArray(row.subjects) ? (row.subjects as string[]) : [];
 	return {
 		id: row.id,
 		type: row.billType,
@@ -51,7 +55,7 @@ billController.get('/bills', async (req, res) => {
 	const take = Math.min(Number(req.query.limit ?? 20), 100);
 	const skip = Number(req.query.offset ?? 0);
 
-	const where: any = {};
+	const where: Prisma.BillWhereInput = {};
 	if (congress) where.congress = Number(congress);
 	if (billType) where.billType = String(billType).toLowerCase();
 	if (policyArea) where.policyArea = String(policyArea);
