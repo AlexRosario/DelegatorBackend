@@ -6,10 +6,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.billController = void 0;
 const express_1 = require("express");
 require("express-async-errors");
+const zod_express_middleware_1 = require("zod-express-middleware");
 const prisma_1 = __importDefault(require("../../prisma/prisma"));
+const auth_utils_1 = require("../utils/auth-utils");
+const zodSchema_1 = require("../zodSchema");
 const congressGovClient_1 = require("../services/congressGovClient");
 const billController = (0, express_1.Router)();
 exports.billController = billController;
+/** What both bill endpoints load: the sponsor, plus a cheap comment count so the
+ *  feed can show a 💬 badge without ever shipping the comments themselves. */
+const BILL_INCLUDE = { sponsor: true, _count: { select: { comments: true } } };
 /**
  * Map a stored Bill row into the congress.gov-ish shape the frontend already
  * consumes, so the app can read pre-assembled bills from our DB instead of
@@ -39,6 +45,7 @@ function serializeBill(row) {
         // Stored raw from congress.gov — already carries recordedVotes for vote-alignment.
         actions: Array.isArray(row.actions) ? row.actions : [],
         policyArea: row.policyArea ? { name: row.policyArea } : null,
+        commentCount: row._count?.comments ?? 0,
         cosponsors: { count: row.cosponsorCount ?? 0 },
         sponsors: row.sponsor ? [row.sponsor] : [],
         textVersions: row.textVersionUrl ? { count: 1, url: row.textVersionUrl } : undefined,
@@ -70,7 +77,7 @@ billController.get('/bills', async (req, res) => {
                 orderBy: { latestActionDate: 'desc' },
                 take,
                 skip,
-                include: { sponsor: true },
+                include: BILL_INCLUDE,
             }),
             prisma_1.default.bill.count({ where }),
         ]);
@@ -120,6 +127,7 @@ async function assembleFromCongress(id) {
         subjects: { legislativeSubjects: subjects.legislativeSubjects ?? [] },
         actions,
         policyArea: bill.policyArea ?? null,
+        commentCount: 0, // not in our DB yet → no discussion thread yet
         cosponsors: bill.cosponsors ?? { count: 0 },
         sponsors: bill.sponsors ?? [],
         textVersions: bill.textVersions ?? undefined,
@@ -129,7 +137,7 @@ billController.get('/bills/:id', async (req, res) => {
     try {
         const row = await prisma_1.default.bill.findUnique({
             where: { id: req.params.id },
-            include: { sponsor: true },
+            include: BILL_INCLUDE,
         });
         if (row) {
             return res.status(200).json(serializeBill(row));
@@ -145,4 +153,75 @@ billController.get('/bills/:id', async (req, res) => {
         console.error('Error fetching bill:', error);
         return res.status(500).json({ message: 'Internal server error' });
     }
+});
+/**
+ * Discussion thread for a bill — newest first, cursor-paginated so the panel
+ * can "load older" without offsets drifting as new comments arrive.
+ *
+ * GET /bills/:id/comments?cursor=<commentId>&limit=20
+ */
+billController.get('/bills/:id/comments', async (req, res) => {
+    const take = Math.min(Number(req.query.limit ?? 20), 100);
+    const cursorId = req.query.cursor ? Number(req.query.cursor) : undefined;
+    const comments = await prisma_1.default.billComment.findMany({
+        where: { billId: req.params.id },
+        orderBy: { id: 'desc' }, // autoincrement id ≈ createdAt order, and it's a stable cursor
+        take,
+        ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+        include: { user: { select: { username: true } } },
+    });
+    return res.status(200).json({
+        comments: comments.map((c) => ({
+            id: c.id,
+            body: c.body,
+            username: c.user.username,
+            createdAt: c.createdAt,
+        })),
+        // Pass this back as ?cursor= to fetch the next (older) page.
+        nextCursor: comments.length === take ? comments[comments.length - 1].id : null,
+    });
+});
+billController.post('/bills/:id/comments', auth_utils_1.authenticate, (0, zod_express_middleware_1.validateRequest)({ body: zodSchema_1.commentSchema }), async (req, res) => {
+    const bill = await prisma_1.default.bill.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!bill)
+        return res.status(404).json({ message: 'Bill not found' });
+    const comment = await prisma_1.default.billComment.create({
+        data: { billId: bill.id, userId: req.user.id, body: req.body.body },
+        include: { user: { select: { username: true } } },
+    });
+    return res.status(201).json({
+        id: comment.id,
+        body: comment.body,
+        username: comment.user.username,
+        createdAt: comment.createdAt,
+    });
+});
+/**
+ * Constituent sentiment per member for one bill: among app users who have the
+ * member in their delegation AND voted on this bill, how many voted Yes / No.
+ * Aggregates only — individual votes are never exposed.
+ *
+ * GET /bills/:id/constituent-votes?members=V000081,S000148,G000555
+ */
+billController.get('/bills/:id/constituent-votes', async (req, res) => {
+    const memberIds = String(req.query.members ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .slice(0, 10); // a user's delegation is 3; cap defensively
+    if (memberIds.length === 0) {
+        return res.status(400).json({ message: 'members query param required (comma-separated bioguideIds)' });
+    }
+    const results = await Promise.all(memberIds.map(async (bioguideId) => {
+        const votes = await prisma_1.default.vote.findMany({
+            where: {
+                billId: req.params.id,
+                user: { members: { some: { id: bioguideId } } },
+            },
+            select: { vote: true },
+        });
+        const yes = votes.filter((v) => v.vote === 'Yes').length;
+        return { bioguideId, yes, no: votes.length - yes, total: votes.length };
+    }));
+    return res.status(200).json({ billId: req.params.id, results });
 });

@@ -21,7 +21,13 @@ export const registerSchema = {
 					}),
 				})
 				.required(),
-			memberIds: z.array(z.string()),
+			// Advisory only — the server derives the real delegation from the Census
+			// district + our roster; these (from 5Calls) are kept as a cross-check.
+			memberIds: z.array(z.string()).optional().default([]),
+			// Constituent self-attestation is required (CWC anti-astroturf posture).
+			attest: z.literal(true, {
+				errorMap: () => ({ message: 'You must attest that you reside at this address' }),
+			}),
 		})
 		.required(),
 };
@@ -30,6 +36,10 @@ export const voteSchema = z.object({
 	billId: z.string(),
 	vote: z.enum(['Yes', 'No']),
 	date: z.preprocess((val) => new Date(val as string), z.instanceof(Date)),
+});
+
+export const commentSchema = z.object({
+	body: z.string().trim().min(1).max(2000),
 });
 
 export const memberVoteSchema = z.object({

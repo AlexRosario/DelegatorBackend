@@ -112,27 +112,52 @@ export async function getFullBill(params: { congress: string; billType: string; 
 
 type BillRef = { congress: string; billType: string; billNumber: string };
 
+/**
+ * Fetch EVERY page of a bill sub-resource. congress.gov defaults to 20 items
+ * per page — without pagination, long action histories silently lose their
+ * early entries (including passage markers and recorded votes).
+ */
+async function fetchAllPages(path: string, extract: (data: any) => any[] | undefined): Promise<any[]> {
+	const all: any[] = [];
+	let offset = 0;
+	for (;;) {
+		const data = await fetchCongress(path, { limit: 250, offset });
+		const page = extract(data) ?? [];
+		all.push(...page);
+		if (!data.pagination?.next || page.length === 0) break;
+		offset += page.length;
+	}
+	return all;
+}
+
 export async function getBillSummaries(p: BillRef): Promise<any[]> {
-	const data = await fetchCongress(`/bill/${p.congress}/${p.billType}/${p.billNumber}/summaries`);
-	return data.summaries ?? [];
+	return fetchAllPages(`/bill/${p.congress}/${p.billType}/${p.billNumber}/summaries`, (d) => d.summaries);
 }
 
 export async function getBillSubjects(p: BillRef): Promise<{ legislativeSubjects: any[]; policyArea?: any }> {
-	const data = await fetchCongress(`/bill/${p.congress}/${p.billType}/${p.billNumber}/subjects`);
-	return {
-		legislativeSubjects: data.subjects?.legislativeSubjects ?? [],
-		policyArea: data.subjects?.policyArea,
-	};
+	const path = `/bill/${p.congress}/${p.billType}/${p.billNumber}/subjects`;
+	// policyArea rides on the first page; legislativeSubjects can span pages.
+	const first = await fetchCongress(path, { limit: 250 });
+	const legislativeSubjects = first.subjects?.legislativeSubjects ?? [];
+	let offset = legislativeSubjects.length;
+	let pagination = first.pagination;
+	while (pagination?.next) {
+		const data = await fetchCongress(path, { limit: 250, offset });
+		const page = data.subjects?.legislativeSubjects ?? [];
+		if (page.length === 0) break;
+		legislativeSubjects.push(...page);
+		offset += page.length;
+		pagination = data.pagination;
+	}
+	return { legislativeSubjects, policyArea: first.subjects?.policyArea };
 }
 
 export async function getBillTextVersions(p: BillRef): Promise<any[]> {
-	const data = await fetchCongress(`/bill/${p.congress}/${p.billType}/${p.billNumber}/text`);
-	return data.textVersions ?? [];
+	return fetchAllPages(`/bill/${p.congress}/${p.billType}/${p.billNumber}/text`, (d) => d.textVersions);
 }
 
 export async function getBillActions(p: BillRef): Promise<any[]> {
-	const data = await fetchCongress(`/bill/${p.congress}/${p.billType}/${p.billNumber}/actions`);
-	return data.actions ?? [];
+	return fetchAllPages(`/bill/${p.congress}/${p.billType}/${p.billNumber}/actions`, (d) => d.actions);
 }
 
 // ----------------------------------------------------------------------------

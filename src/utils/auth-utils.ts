@@ -13,11 +13,16 @@ export const createUnsecuredInfo = (user: User) => {
 		id: user.id,
 		username: user.username,
 		zipcode: user.zipcode,
+		emailVerified: user.emailVerified,
+		district: user.district,
+		verificationSource: user.verificationSource,
 	};
 };
 
 export const generateAccessToken = (user: { id: number; username: string; zipcode: string }) => {
-	return jwt.sign(user, process.env.JWT_SECRET as string, {
+	// Sign ONLY the fields the token needs. Callers pass full Prisma rows —
+	// signing `user` directly would embed passwordHash in a decodable JWT.
+	return jwt.sign({ id: user.id, username: user.username, zipcode: user.zipcode }, process.env.JWT_SECRET as string, {
 		expiresIn: '1d',
 	});
 };

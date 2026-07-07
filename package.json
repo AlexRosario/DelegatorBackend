@@ -9,11 +9,12 @@
 		"prisma:generate": "prisma generate",
 		"migrate:dev": "prisma migrate dev",
 		"migrate:deploy": "prisma migrate deploy",
-		"ingest:bills": "npm run build && node dist/workers/dailyBillIngest.js",
+		"ingest:bills": "npm run build && node dist/src/workers/dailyBillIngest.js",
 		"ingest:bills:dev": "ts-node src/workers/dailyBillIngest.ts",
-		"ingest:members": "npm run build && node dist/workers/dailyMemberIngest.js",
+		"ingest:members": "npm run build && node dist/src/workers/dailyMemberIngest.js",
 		"ingest:members:dev": "ts-node src/workers/dailyMemberIngest.ts",
-		"ingest:backfill": "npm run build && node dist/workers/backfillBills.js"
+		"ingest:backfill": "npm run build && node dist/src/workers/backfillBills.js",
+		"reconcile:delegations": "npm run build && node dist/src/workers/reconcileDelegations.js"
 	},
 	"keywords": [],
 	"author": "",

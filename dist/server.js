@@ -13,6 +13,7 @@ const rep_router_1 = require("./src/router/rep.router");
 const bill_router_1 = require("./src/router/bill.router");
 const dailyBillIngest_1 = require("./src/workers/dailyBillIngest");
 const dailyMemberIngest_1 = require("./src/workers/dailyMemberIngest");
+const reconcileDelegations_1 = require("./src/workers/reconcileDelegations");
 const positionstack_router_1 = __importDefault(require("./src/router/external/positionstack.router"));
 const fivecalls_router_1 = __importDefault(require("./src/router/external/fivecalls.router"));
 const translate_router_1 = __importDefault(require("./src/router/external/translate.router"));
@@ -94,6 +95,14 @@ node_cron_1.default.schedule('0 8 * * *', async () => {
     }
     catch (err) {
         console.error('[cron] daily member ingest failed', err);
+    }
+    // After the roster refresh: re-verify user→delegation mappings against it.
+    try {
+        const reconcileResult = await (0, reconcileDelegations_1.runDelegationReconcile)();
+        console.log('[cron] delegation reconcile complete', reconcileResult);
+    }
+    catch (err) {
+        console.error('[cron] delegation reconcile failed', err);
     }
     finally {
         ingestRunning = false;

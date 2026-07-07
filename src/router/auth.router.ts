@@ -1,16 +1,19 @@
 import { Router } from 'express';
 import 'express-async-errors';
+import crypto from 'crypto';
 import { loginSchema, registerSchema } from '../zodSchema';
 import { encryptPassword } from '../utils/auth-utils';
 import { validateRequest } from 'zod-express-middleware';
 import bcrypt from 'bcrypt';
 import { generateAccessToken, createUnsecuredInfo } from '../utils/auth-utils';
 import prisma from '../../prisma/prisma';
+import { resolveDelegation } from '../services/districtResolver';
+import { sendVerificationEmail } from '../services/emailProvider';
 const authController = Router();
 
 authController.post('/auth/register', validateRequest(registerSchema), async (req, res) => {
-	const { email, username, password, address, memberIds } = req.body;
-	console.log('Registering user with email:', email, 'and username:', username);
+	const { email, username, password, address } = req.body;
+	const clientMemberIds: string[] = req.body.memberIds ?? [];
 
 	const existing = await prisma.user.findUnique({ where: { email } });
 	if (existing) {
@@ -26,6 +29,32 @@ authController.post('/auth/register', validateRequest(registerSchema), async (re
 		});
 	}
 
+	// Server-side delegation resolution: Census district + our roster is the
+	// source of truth. Client-sent memberIds (from 5Calls) are only a fallback
+	// and a cross-check — ZIP-based mapping misassigns House reps.
+	const delegation = await resolveDelegation(address);
+	let memberIds: string[];
+	let verificationSource: string;
+	if (delegation && delegation.memberIds.length > 0) {
+		memberIds = delegation.memberIds;
+		verificationSource = 'census+roster';
+		// Cross-check: does the client's 5Calls house rep agree with the Census one?
+		if (delegation.houseRepId && clientMemberIds.length > 0 && !clientMemberIds.includes(delegation.houseRepId)) {
+			verificationSource += ';fivecalls-mismatch';
+			console.warn(
+				`[register] 5Calls/Census house-rep mismatch for ${username}: census=${delegation.houseRepId} client=${clientMemberIds.join(',')}`
+			);
+		}
+	} else {
+		// Census couldn't resolve (bad address, outage) — fall back to 5Calls ids
+		// so signup still works, but mark the mapping unverified.
+		memberIds = clientMemberIds;
+		verificationSource = clientMemberIds.length > 0 ? 'client-fivecalls-fallback' : 'unresolved';
+		console.warn(`[register] Census resolution failed for ${username}; using ${verificationSource}`);
+	}
+
+	const emailVerifyToken = crypto.randomBytes(32).toString('hex');
+
 	const newUser = await prisma.user.create({
 		data: {
 			email,
@@ -35,6 +64,12 @@ authController.post('/auth/register', validateRequest(registerSchema), async (re
 			city: address.city,
 			state: address.state,
 			zipcode: address.zipcode,
+			district: delegation?.resolution.district ?? null,
+			derivedState: delegation?.resolution.state ?? null,
+			delegationVerifiedAt: delegation ? new Date() : null,
+			verificationSource,
+			attestedAt: new Date(), // schema requires attest === true to reach here
+			emailVerifyToken,
 			members: {
 				connect: memberIds.map((id: string) => ({ id })),
 			},
@@ -44,7 +79,34 @@ authController.post('/auth/register', validateRequest(registerSchema), async (re
 		return res.status(500).json({ message: 'User creation failed' });
 	}
 
-	return res.status(201).json({ message: 'User created successfully', userId: newUser.id });
+	// Fire-and-forget: a failed email must not fail the signup.
+	sendVerificationEmail(email, emailVerifyToken).catch((err) =>
+		console.error('Verification email failed:', err)
+	);
+
+	return res.status(201).json({
+		message: 'User created successfully',
+		userId: newUser.id,
+		district: delegation?.resolution.district ?? null,
+		state: delegation?.resolution.state ?? null,
+		matchedAddress: delegation?.resolution.matchedAddress ?? null,
+		verificationSource,
+	});
+});
+
+// Email verification link target (from the signup email).
+authController.get('/auth/verify-email', async (req, res) => {
+	const token = String(req.query.token ?? '');
+	if (!token) return res.status(400).send('Missing token');
+
+	const user = await prisma.user.findFirst({ where: { emailVerifyToken: token } });
+	if (!user) return res.status(400).send('Invalid or already-used verification link');
+
+	await prisma.user.update({
+		where: { id: user.id },
+		data: { emailVerified: true, emailVerifyToken: null },
+	});
+	return res.send('Email verified — you can close this tab and return to Delegator.');
 });
 
 authController.get('/logout', async (_req, res) => {

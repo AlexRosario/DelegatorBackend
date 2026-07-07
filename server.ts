@@ -8,6 +8,7 @@ import { repController } from './src/router/rep.router';
 import { billController } from './src/router/bill.router';
 import { runDailyBillIngest } from './src/workers/dailyBillIngest';
 import { runDailyMemberIngest } from './src/workers/dailyMemberIngest';
+import { runDelegationReconcile } from './src/workers/reconcileDelegations';
 
 import positionstackRoutes from './src/router/external/positionstack.router';
 import fiveCallsRoutes from './src/router/external/fivecalls.router';
@@ -99,6 +100,13 @@ cron.schedule(
 			console.log('[cron] daily member ingest complete', memberResult);
 		} catch (err) {
 			console.error('[cron] daily member ingest failed', err);
+		}
+		// After the roster refresh: re-verify user→delegation mappings against it.
+		try {
+			const reconcileResult = await runDelegationReconcile();
+			console.log('[cron] delegation reconcile complete', reconcileResult);
+		} catch (err) {
+			console.error('[cron] delegation reconcile failed', err);
 		} finally {
 			ingestRunning = false;
 		}

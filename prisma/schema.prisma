@@ -24,8 +24,18 @@ model User {
   state        String
   zipcode      String
 
+  // Constituent verification (CWC-grade delegation mapping).
+  district             Int?      // congressional district DERIVED from the address (not user-typed)
+  derivedState         String?   // full state name from the Census match
+  delegationVerifiedAt DateTime? // when the district→members mapping was last verified
+  verificationSource   String?   // e.g. "census+roster", "client-fivecalls-fallback"
+  emailVerified        Boolean   @default(false)
+  emailVerifyToken     String?
+  attestedAt           DateTime? // constituent self-attestation at registration
+
   members      Member[] @relation("UserMembers")
   votes        Vote[]
+  comments     BillComment[]
 }
 
 //
@@ -117,6 +127,7 @@ model Bill {
 
   rollCalls       RollCall[]
   userVotes       Vote[]
+  comments        BillComment[]
   enrichment      BillEnrichment?
 
   createdAt       DateTime @default(now())
@@ -191,6 +202,23 @@ model RollCallVote {
   member       Member?  @relation(fields: [bioguideId], references: [id])
 
   @@unique([rollCallId, bioguideId])
+}
+
+//
+// ==========================
+// Per-bill discussion threads
+// ==========================
+model BillComment {
+  id        Int      @id @default(autoincrement())
+  billId    String
+  userId    Int
+  body      String
+  createdAt DateTime @default(now())
+
+  bill      Bill     @relation(fields: [billId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([billId, createdAt])
 }
 
 model IngestionRun {
