@@ -11,10 +11,11 @@ const auth_router_1 = require("./src/router/auth.router");
 const vote_router_1 = require("./src/router/vote.router");
 const rep_router_1 = require("./src/router/rep.router");
 const bill_router_1 = require("./src/router/bill.router");
+const contact_router_1 = require("./src/router/contact.router");
 const dailyBillIngest_1 = require("./src/workers/dailyBillIngest");
 const dailyMemberIngest_1 = require("./src/workers/dailyMemberIngest");
 const reconcileDelegations_1 = require("./src/workers/reconcileDelegations");
-const positionstack_router_1 = __importDefault(require("./src/router/external/positionstack.router"));
+const location_router_1 = __importDefault(require("./src/router/location.router"));
 const fivecalls_router_1 = __importDefault(require("./src/router/external/fivecalls.router"));
 const translate_router_1 = __importDefault(require("./src/router/external/translate.router"));
 const app = (0, express_1.default)();
@@ -59,13 +60,14 @@ app.get('/api/roll-call', async (req, res) => {
         res.status(500).send('Internal Server Error');
     }
 });
-app.use('/location', positionstack_router_1.default);
+app.use('/location', location_router_1.default);
 app.use('/fiveCallsRoutes', fivecalls_router_1.default);
 app.use('/translate', translate_router_1.default);
 app.use(auth_router_1.authController);
 app.use(vote_router_1.voteController);
 app.use(rep_router_1.repController);
 app.use(bill_router_1.billController);
+app.use(contact_router_1.contactController);
 app.use((err, _req, res, _next) => {
     console.error(err);
     res.status(500).json({ message: 'Something went wrong', error: err.message });

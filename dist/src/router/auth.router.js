@@ -19,7 +19,6 @@ const authController = (0, express_1.Router)();
 exports.authController = authController;
 authController.post('/auth/register', (0, zod_express_middleware_1.validateRequest)(zodSchema_1.registerSchema), async (req, res) => {
     const { email, username, password, address } = req.body;
-    const clientMemberIds = req.body.memberIds ?? [];
     const existing = await prisma_1.default.user.findUnique({ where: { email } });
     if (existing) {
         return res.status(409).json({ message: 'Account with that email already exists in record' });
@@ -33,26 +32,14 @@ authController.post('/auth/register', (0, zod_express_middleware_1.validateReque
         });
     }
     // Server-side delegation resolution: Census district + our roster is the
-    // source of truth. Client-sent memberIds (from 5Calls) are only a fallback
-    // and a cross-check — ZIP-based mapping misassigns House reps.
+    // single source of truth (the frontend pre-validates the address against
+    // /location/verify, so an unresolved signup here means a transient Census
+    // failure — the nightly reconcile worker retries those).
     const delegation = await (0, districtResolver_1.resolveDelegation)(address);
-    let memberIds;
-    let verificationSource;
-    if (delegation && delegation.memberIds.length > 0) {
-        memberIds = delegation.memberIds;
-        verificationSource = 'census+roster';
-        // Cross-check: does the client's 5Calls house rep agree with the Census one?
-        if (delegation.houseRepId && clientMemberIds.length > 0 && !clientMemberIds.includes(delegation.houseRepId)) {
-            verificationSource += ';fivecalls-mismatch';
-            console.warn(`[register] 5Calls/Census house-rep mismatch for ${username}: census=${delegation.houseRepId} client=${clientMemberIds.join(',')}`);
-        }
-    }
-    else {
-        // Census couldn't resolve (bad address, outage) — fall back to 5Calls ids
-        // so signup still works, but mark the mapping unverified.
-        memberIds = clientMemberIds;
-        verificationSource = clientMemberIds.length > 0 ? 'client-fivecalls-fallback' : 'unresolved';
-        console.warn(`[register] Census resolution failed for ${username}; using ${verificationSource}`);
+    const memberIds = delegation?.memberIds ?? [];
+    const verificationSource = delegation && memberIds.length > 0 ? 'census+roster' : 'unresolved';
+    if (verificationSource === 'unresolved') {
+        console.warn(`[register] Census resolution failed for ${username}; delegation deferred to reconcile`);
     }
     const emailVerifyToken = crypto_1.default.randomBytes(32).toString('hex');
     const newUser = await prisma_1.default.user.create({

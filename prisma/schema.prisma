@@ -36,6 +36,7 @@ model User {
   members      Member[] @relation("UserMembers")
   votes        Vote[]
   comments     BillComment[]
+  contactMessages ContactMessage[]
 }
 
 //
@@ -71,6 +72,7 @@ model Member {
   memberVotes  MemberVote[]
   rollCallVotes RollCallVote[]
   sponsoredBills Bill[]       @relation("BillSponsor")
+  contactMessages ContactMessage[]
 }
 
 model FieldOffice {
@@ -128,6 +130,7 @@ model Bill {
   rollCalls       RollCall[]
   userVotes       Vote[]
   comments        BillComment[]
+  contactMessages ContactMessage[]
   enrichment      BillEnrichment?
 
   createdAt       DateTime @default(now())
@@ -202,6 +205,28 @@ model RollCallVote {
   member       Member?  @relation(fields: [bioguideId], references: [id])
 
   @@unique([rollCallId, bioguideId])
+}
+
+//
+// ==========================
+// Constituent → member contact log (CWC audit trail)
+// ==========================
+model ContactMessage {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  bioguideId     String
+  billId         String
+  body           String
+  // How it was (or will be) delivered: "draft-copy" now; "cwc" / "scwc" later.
+  deliveryMethod String
+  createdAt      DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id])
+  member         Member   @relation(fields: [bioguideId], references: [id])
+  bill           Bill     @relation(fields: [billId], references: [id])
+
+  @@index([billId, bioguideId])
+  @@index([userId, createdAt])
 }
 
 //

@@ -6,11 +6,12 @@ import { authController } from './src/router/auth.router';
 import { voteController } from './src/router/vote.router';
 import { repController } from './src/router/rep.router';
 import { billController } from './src/router/bill.router';
+import { contactController } from './src/router/contact.router';
 import { runDailyBillIngest } from './src/workers/dailyBillIngest';
 import { runDailyMemberIngest } from './src/workers/dailyMemberIngest';
 import { runDelegationReconcile } from './src/workers/reconcileDelegations';
 
-import positionstackRoutes from './src/router/external/positionstack.router';
+import locationRoutes from './src/router/location.router';
 import fiveCallsRoutes from './src/router/external/fivecalls.router';
 import translateRoutes from './src/router/external/translate.router';
 
@@ -62,7 +63,7 @@ app.get('/api/roll-call', async (req, res) => {
 	}
 });
 
-app.use('/location', positionstackRoutes);
+app.use('/location', locationRoutes);
 app.use('/fiveCallsRoutes', fiveCallsRoutes);
 app.use('/translate', translateRoutes);
 
@@ -70,6 +71,7 @@ app.use(authController);
 app.use(voteController);
 app.use(repController);
 app.use(billController);
+app.use(contactController);
 app.use((err: Error, _req: any, res: any, _next: any) => {
 	console.error(err);
 	res.status(500).json({ message: 'Something went wrong', error: err.message });

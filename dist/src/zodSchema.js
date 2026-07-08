@@ -24,9 +24,6 @@ exports.registerSchema = {
             }),
         })
             .required(),
-        // Advisory only — the server derives the real delegation from the Census
-        // district + our roster; these (from 5Calls) are kept as a cross-check.
-        memberIds: zod_1.z.array(zod_1.z.string()).optional().default([]),
         // Constituent self-attestation is required (CWC anti-astroturf posture).
         attest: zod_1.z.literal(true, {
             errorMap: () => ({ message: 'You must attest that you reside at this address' }),
