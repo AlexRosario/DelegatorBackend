@@ -19,9 +19,12 @@ const location_router_1 = __importDefault(require("./src/router/location.router"
 const fivecalls_router_1 = __importDefault(require("./src/router/external/fivecalls.router"));
 const translate_router_1 = __importDefault(require("./src/router/external/translate.router"));
 const app = (0, express_1.default)();
+// CLIENT_ORIGIN is the canonical frontend URL; its www. variant is accepted too
+// so www visitors aren't silently CORS-blocked.
+const clientOrigin = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';
+const allowedOrigins = [clientOrigin, clientOrigin.replace('://', '://www.')];
 app.use((0, cors_1.default)({
-    // Set CLIENT_ORIGIN to the deployed frontend URL when going live.
-    origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
+    origin: allowedOrigins,
     credentials: true,
 }));
 app.use(express_1.default.json());

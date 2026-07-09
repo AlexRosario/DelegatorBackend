@@ -17,10 +17,13 @@ import translateRoutes from './src/router/external/translate.router';
 
 const app = express();
 
+// CLIENT_ORIGIN is the canonical frontend URL; its www. variant is accepted too
+// so www visitors aren't silently CORS-blocked.
+const clientOrigin = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';
+const allowedOrigins = [clientOrigin, clientOrigin.replace('://', '://www.')];
 app.use(
 	cors({
-		// Set CLIENT_ORIGIN to the deployed frontend URL when going live.
-		origin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
+		origin: allowedOrigins,
 		credentials: true,
 	})
 );
