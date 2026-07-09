@@ -65,7 +65,7 @@ billController.get('/bills', async (req, res) => {
 	if (congress) where.congress = Number(congress);
 	if (billType) where.billType = String(billType).toLowerCase();
 	if (policyArea) where.policyArea = String(policyArea);
-	if (q) where.title = { contains: String(q) };
+	if (q) where.title = { contains: String(q), mode: 'insensitive' }; // PG contains is case-sensitive (SQLite's wasn't)
 
 	try {
 		const [bills, total] = await Promise.all([

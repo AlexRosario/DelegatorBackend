@@ -2,10 +2,13 @@
 	"name": "delegatorbackend",
 	"version": "1.0.0",
 	"main": "index.js",
+	"engines": {
+		"node": ">=20"
+	},
 	"scripts": {
-		"build": "tsc",
+		"build": "tsc && prisma generate",
 		"dev": "ts-node server.ts",
-		"start": "npm run build && node dist/server.js",
+		"start": "prisma migrate deploy && node dist/server.js",
 		"prisma:generate": "prisma generate",
 		"migrate:dev": "prisma migrate dev",
 		"migrate:deploy": "prisma migrate deploy",
