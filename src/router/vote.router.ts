@@ -51,8 +51,12 @@ voteController.post('/votes', authenticate, validateRequest({ body: voteSchema }
 		return res.status(401).json({ message: 'User not authenticated' });
 	}
 	try {
-		const newVote = await prisma.vote.create({
-			data: {
+		// Upsert: a re-vote (double-click, stale tab, out-of-sync local log) must
+		// not 500 on the (userId, billId) unique — it just reaffirms/updates.
+		const newVote = await prisma.vote.upsert({
+			where: { userId_billId: { userId, billId } },
+			update: { vote, date: date as Date },
+			create: {
 				userId,
 				billId,
 				vote,
@@ -74,8 +78,10 @@ voteController.post('/member_votes', validateRequest({ body: memberVoteSchema })
 			billId,
 		},
 	});
+	// Member votes are global per (member, bill): every voter re-derives the same
+	// roll-call data, so a repeat recording is expected — a no-op, not an error.
 	if (existingVote) {
-		return res.status(400).json({ message: 'Vote for this bill by this member already exists' });
+		return res.status(200).json(existingVote);
 	}
 	try {
 		const newVote = await prisma.memberVote.create({

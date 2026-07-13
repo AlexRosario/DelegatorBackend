@@ -71,7 +71,10 @@ billController.get('/bills', async (req, res) => {
 		const [bills, total] = await Promise.all([
 			prisma.bill.findMany({
 				where,
-				orderBy: { latestActionDate: 'desc' },
+				// id tiebreaker: many bills share a latestActionDate, and Postgres gives
+				// no stable order among ties — without it, offset pages overlap and the
+				// client's dedup starves the infinite scroll.
+				orderBy: [{ latestActionDate: 'desc' }, { id: 'asc' }],
 				take,
 				skip,
 				include: BILL_INCLUDE,
