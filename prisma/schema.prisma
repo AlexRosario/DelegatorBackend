@@ -263,3 +263,12 @@ model BillEnrichment {
   lastError  String?
   updatedAt  DateTime @updatedAt
 }
+
+// FEC donor summaries are expensive to assemble (several upstream calls) and
+// change slowly — cache the built payload per member and refresh on TTL.
+model MemberDonorCache {
+  bioguideId String   @id
+  cycle      Int
+  payload    Json
+  fetchedAt  DateTime @default(now())
+}

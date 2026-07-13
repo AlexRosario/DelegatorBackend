@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import 'express-async-errors';
 import prisma from '../../prisma/prisma';
+import { getDonorSummary } from '../services/donorService';
 
 const repController = Router();
 
@@ -25,6 +26,25 @@ repController.get('/members/by-user/:userId', async (req, res) => {
 	} catch (error) {
 		console.error('Error fetching members by user:', error);
 		res.status(500).json({ message: 'Internal server error' });
+	}
+});
+// Campaign-finance summary for a member (FEC data, cached server-side).
+repController.get('/members/:bioguideId/donors', async (req, res) => {
+	const { bioguideId } = req.params;
+	try {
+		const member = await prisma.member.findUnique({ where: { id: bioguideId } });
+		const summary = await getDonorSummary(bioguideId, member?.chamber);
+		if (!summary) {
+			return res.status(404).json({ message: 'No FEC campaign-finance data found for this member' });
+		}
+		return res.status(200).json(summary);
+	} catch (error) {
+		console.error('Error fetching donor summary:', error);
+		const message = error instanceof Error ? error.message : '';
+		if (message.includes('FEC_API_KEY')) {
+			return res.status(503).json({ message: 'Donor data is not configured on this server' });
+		}
+		return res.status(500).json({ message: 'Internal server error' });
 	}
 });
 repController.get('/members/:bioguideId', async (req, res) => {
