@@ -8,6 +8,7 @@ import {
 } from '../services/congressGovClient';
 import { upsertBill } from './upsertBill';
 import { upsertMember } from './upsertMember';
+import { upsertRollCalls } from './upsertRollCalls';
 
 /** A missing sub-resource shouldn't sink the whole bill — degrade gracefully. */
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -47,6 +48,9 @@ export async function ingestBill(params: { congress: number; billType: string; b
 		}
 
 		const saved = await upsertBill(tx, { bill, summaries, subjects, textVersions, actions });
+
+		// Promote recorded votes out of the actions JSON into queryable rows.
+		await upsertRollCalls(tx, saved.id, actions);
 
 		await tx.billEnrichment.upsert({
 			where: { billId: saved.id },

@@ -17,7 +17,8 @@
 		"ingest:members": "npm run build && node dist/src/workers/dailyMemberIngest.js",
 		"ingest:members:dev": "ts-node src/workers/dailyMemberIngest.ts",
 		"ingest:backfill": "npm run build && node dist/src/workers/backfillBills.js",
-		"reconcile:delegations": "npm run build && node dist/src/workers/reconcileDelegations.js"
+		"reconcile:delegations": "npm run build && node dist/src/workers/reconcileDelegations.js",
+		"backfill:rollcalls": "ts-node src/workers/backfillRollCalls.ts"
 	},
 	"keywords": [],
 	"author": "",

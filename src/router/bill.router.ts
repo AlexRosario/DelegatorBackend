@@ -57,7 +57,7 @@ function serializeBill(row: BillWithSponsor) {
  * GET /bills?congress=119&billType=hr&policyArea=Energy&q=energy&limit=20&offset=0
  */
 billController.get('/bills', async (req, res) => {
-	const { congress, billType, policyArea, q } = req.query;
+	const { congress, billType, policyArea, q, filter } = req.query;
 	const take = Math.min(Number(req.query.limit ?? 20), 100);
 	const skip = Number(req.query.offset ?? 0);
 
@@ -66,6 +66,11 @@ billController.get('/bills', async (req, res) => {
 	if (billType) where.billType = String(billType).toLowerCase();
 	if (policyArea) where.policyArea = String(policyArea);
 	if (q) where.title = { contains: String(q), mode: 'insensitive' }; // PG contains is case-sensitive (SQLite's wasn't)
+
+	// Facet filters are DB queries, not client-side subsets of loaded pages —
+	// each facet paginates over the full corpus independently.
+	if (filter === 'passed') where.stage = 'Became Law';
+	if (filter === 'roll-call') where.rollCalls = { some: {} };
 
 	try {
 		const [bills, total] = await Promise.all([
