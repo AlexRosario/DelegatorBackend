@@ -3,7 +3,8 @@ import 'express-async-errors';
 import { Prisma } from '@prisma/client';
 import { validateRequest } from 'zod-express-middleware';
 import prisma from '../../prisma/prisma';
-import { authenticate } from '../utils/auth-utils';
+import { authenticate, getDataFromToken } from '../utils/auth-utils';
+import type { JwtPayload } from 'jsonwebtoken';
 import { commentSchema } from '../zodSchema';
 import { getFullBill, getBillSummaries, getBillSubjects, getBillTextVersions, getBillActions } from '../services/congressGovClient';
 
@@ -71,6 +72,21 @@ billController.get('/bills', async (req, res) => {
 	// each facet paginates over the full corpus independently.
 	if (filter === 'passed') where.stage = 'Became Law';
 	if (filter === 'roll-call') where.rollCalls = { some: {} };
+
+	// Per-user facets: the server owns the votes, so it can exclude (discover
+	// feed) or select (My Bills) the caller's voted bills exactly — no reliance
+	// on client-side vote logs. Requires a valid JWT; 401 lets the client fall
+	// back to an unpersonalized query rather than a broken feed.
+	const voted = req.query.voted;
+	if (voted === 'exclude' || voted === 'only') {
+		const token = req.headers.authorization?.split(' ')[1] || '';
+		const payload = getDataFromToken(token) as JwtPayload | null;
+		const caller = payload?.username
+			? await prisma.user.findUnique({ where: { username: payload.username } })
+			: null;
+		if (!caller) return res.status(401).json({ message: 'Sign in required for voted filters' });
+		where.userVotes = voted === 'exclude' ? { none: { userId: caller.id } } : { some: { userId: caller.id } };
+	}
 
 	try {
 		const [bills, total] = await Promise.all([
