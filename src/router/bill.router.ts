@@ -72,11 +72,20 @@ const BILL_STAGES = new Set([
 ]);
 
 /** Facet counts for the filter menu: server truth about which facets are
- *  non-empty and how big, so the client never gates options on loaded pages. */
+ *  non-empty and how big, so the client never gates options on loaded pages.
+ *  With a valid JWT the counts answer "how many are left for YOU" (unvoted),
+ *  matching what the personalized feed will actually show — the menu and the
+ *  feed must be answers to the same question. Guests get corpus counts. */
 billController.get('/bills/facets', async (req, res) => {
 	const congress = Number(req.query.congress ?? 119);
 	try {
-		const where = { congress };
+		const token = req.headers.authorization?.split(' ')[1] || '';
+		const payload = getDataFromToken(token) as JwtPayload | null;
+		const caller = payload?.username
+			? await prisma.user.findUnique({ where: { username: payload.username } })
+			: null;
+		const where: Prisma.BillWhereInput = { congress };
+		if (caller) where.userVotes = { none: { userId: caller.id } };
 		const [total, rollCall, stageGroups] = await Promise.all([
 			prisma.bill.count({ where }),
 			prisma.bill.count({ where: { ...where, rollCalls: { some: {} } } }),
