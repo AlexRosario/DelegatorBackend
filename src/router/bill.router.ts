@@ -57,6 +57,42 @@ function serializeBill(row: BillWithSponsor) {
  *
  * GET /bills?congress=119&billType=hr&policyArea=Energy&q=energy&limit=20&offset=0
  */
+// The stage vocabulary deriveStage (ingestion/normalizeBill) can produce —
+// requests naming anything else are ignored rather than erroring.
+const BILL_STAGES = new Set([
+	'Introduced',
+	'In Committee',
+	'Passed House',
+	'Passed Senate',
+	'Passed Both Chambers',
+	'To President',
+	'Became Law',
+	'Failed',
+	'Vetoed',
+]);
+
+/** Facet counts for the filter menu: server truth about which facets are
+ *  non-empty and how big, so the client never gates options on loaded pages. */
+billController.get('/bills/facets', async (req, res) => {
+	const congress = Number(req.query.congress ?? 119);
+	try {
+		const where = { congress };
+		const [total, rollCall, stageGroups] = await Promise.all([
+			prisma.bill.count({ where }),
+			prisma.bill.count({ where: { ...where, rollCalls: { some: {} } } }),
+			prisma.bill.groupBy({ by: ['stage'], where, _count: { _all: true } }),
+		]);
+		const stages: Record<string, number> = {};
+		for (const group of stageGroups) {
+			if (group.stage) stages[group.stage] = group._count._all;
+		}
+		return res.status(200).json({ total, rollCall, stages });
+	} catch (error) {
+		console.error('Error fetching bill facets:', error);
+		return res.status(500).json({ message: 'Internal server error' });
+	}
+});
+
 billController.get('/bills', async (req, res) => {
 	const { congress, billType, policyArea, q, filter } = req.query;
 	const take = Math.min(Number(req.query.limit ?? 20), 100);
@@ -69,7 +105,15 @@ billController.get('/bills', async (req, res) => {
 	if (q) where.title = { contains: String(q), mode: 'insensitive' }; // PG contains is case-sensitive (SQLite's wasn't)
 
 	// Facet filters are DB queries, not client-side subsets of loaded pages —
-	// each facet paginates over the full corpus independently.
+	// each facet paginates over the full corpus independently. Dimensions are
+	// orthogonal params so they compose (stage + roll call + voted) for free.
+	const stages = String(req.query.stage ?? '')
+		.split(',')
+		.filter((s) => BILL_STAGES.has(s));
+	if (stages.length > 0) where.stage = { in: stages };
+	if (req.query.hasRollCall === 'true') where.rollCalls = { some: {} };
+
+	// Legacy aliases (pre-facet frontend) — keep one deploy cycle, then remove.
 	if (filter === 'passed') where.stage = 'Became Law';
 	if (filter === 'roll-call') where.rollCalls = { some: {} };
 
