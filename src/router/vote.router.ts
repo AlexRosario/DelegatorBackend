@@ -1,9 +1,10 @@
-import { NextFunction, Request, Response, Router } from 'express';
+import { Router } from 'express';
 import prisma from '../../prisma/prisma';
 import { validateRequest } from 'zod-express-middleware';
 import { voteSchema, memberVoteSchema } from '../zodSchema';
-import { getDataFromToken } from '../utils/auth-utils';
-import { JwtPayload } from 'jsonwebtoken';
+// Shared middleware reads the session from the httpOnly cookie (with a Bearer
+// fallback) — this router used to keep a header-only copy.
+import { authenticate } from '../utils/auth-utils';
 
 const voteController = Router();
 
@@ -14,22 +15,6 @@ declare global {
 		}
 	}
 }
-const authenticate = async (req: Request, res: Response, next: NextFunction) => {
-	const token = req.headers.authorization?.split(' ')[1] || '';
-	const data = getDataFromToken(token) as JwtPayload;
-	if (!data) {
-		return res.status(401).json({ message: 'Invalid Token' });
-	}
-	const userFromJwt = await prisma.user.findUnique({
-		where: { username: data?.username },
-	});
-
-	if (!userFromJwt) {
-		return res.status(401).json({ message: 'User not found' });
-	}
-	req.user = userFromJwt;
-	next();
-};
 voteController.get('/votes', authenticate, async (req, res) => {
 	try {
 		const votes = await prisma.vote.findMany({

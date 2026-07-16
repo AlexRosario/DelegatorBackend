@@ -5,7 +5,7 @@ import { loginSchema, registerSchema } from '../zodSchema';
 import { encryptPassword } from '../utils/auth-utils';
 import { validateRequest } from 'zod-express-middleware';
 import bcrypt from 'bcrypt';
-import { generateAccessToken, createUnsecuredInfo } from '../utils/auth-utils';
+import { generateAccessToken, createUnsecuredInfo, SESSION_COOKIE_OPTIONS } from '../utils/auth-utils';
 import prisma from '../../prisma/prisma';
 import { resolveDelegation } from '../services/districtResolver';
 import { sendVerificationEmail } from '../services/emailProvider';
@@ -96,9 +96,8 @@ authController.get('/auth/verify-email', async (req, res) => {
 });
 
 authController.get('/logout', async (_req, res) => {
-	// Tokens are stored client-side; the server has no session to clear. The
-	// client should drop its token/user on logout. (Previously this called
-	// `localStorage`, which is undefined in Node and threw on every request.)
+	// The session rides in an httpOnly cookie — clearing it here is the logout.
+	res.clearCookie('token', { httpOnly: true, sameSite: 'lax' });
 	res.status(200).json({ message: 'Logout successful' });
 });
 
@@ -118,10 +117,10 @@ authController.post('/auth/login', validateRequest(loginSchema), async (req, res
 	const userInfo = createUnsecuredInfo(user);
 	const token = generateAccessToken(user);
 
-	return res.status(200).json({
-		token,
-		userInfo,
-	});
+	// The JWT lives ONLY in an httpOnly cookie: the browser attaches it to API
+	// calls automatically, and page scripts can never read it (XSS containment).
+	res.cookie('token', token, SESSION_COOKIE_OPTIONS);
+	return res.status(200).json({ userInfo });
 });
 
 export { authController };

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import 'express-async-errors';
 import prisma from '../../prisma/prisma';
+import { authenticate } from '../utils/auth-utils';
 import { getDonorSummary } from '../services/donorService';
 
 const repController = Router();
@@ -8,23 +9,21 @@ const repController = Router();
 repController.get('/members/test', (_req, res) => {
 	res.send('repController works!');
 });
-repController.get('/members/by-user/:userId', async (req, res) => {
-	const userId = parseInt(req.params.userId);
-	console.log('Fetching members for user ID:', userId);
-
+// The caller's own delegation. Replaces the unauthenticated /members/by-user/:id
+// route, which let anyone enumerate user ids and infer where each user lives
+// (a House rep pins down the district).
+repController.get('/members/mine', authenticate, async (req, res) => {
 	try {
 		const userWithMembers = await prisma.user.findUnique({
-			where: { id: userId },
+			where: { id: req.user!.id },
 			include: { members: true },
 		});
-
 		if (!userWithMembers) {
 			return res.status(404).json({ message: 'User not found' });
 		}
-
-		res.json(userWithMembers.members); // just return the members
+		res.json(userWithMembers.members);
 	} catch (error) {
-		console.error('Error fetching members by user:', error);
+		console.error('Error fetching own members:', error);
 		res.status(500).json({ message: 'Internal server error' });
 	}
 });

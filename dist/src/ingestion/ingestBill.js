@@ -8,6 +8,7 @@ const prisma_1 = __importDefault(require("../../prisma/prisma"));
 const congressGovClient_1 = require("../services/congressGovClient");
 const upsertBill_1 = require("./upsertBill");
 const upsertMember_1 = require("./upsertMember");
+const upsertRollCalls_1 = require("./upsertRollCalls");
 /** A missing sub-resource shouldn't sink the whole bill — degrade gracefully. */
 async function safe(fn, fallback) {
     try {
@@ -43,6 +44,8 @@ async function ingestBill(params) {
             await (0, upsertMember_1.upsertMember)(tx, sponsor);
         }
         const saved = await (0, upsertBill_1.upsertBill)(tx, { bill, summaries, subjects, textVersions, actions });
+        // Promote recorded votes out of the actions JSON into queryable rows.
+        await (0, upsertRollCalls_1.upsertRollCalls)(tx, saved.id, actions);
         await tx.billEnrichment.upsert({
             where: { billId: saved.id },
             create: { billId: saved.id, status: 'done', attempts: 1 },

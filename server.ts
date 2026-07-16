@@ -1,6 +1,7 @@
 import 'dotenv/config'; // load env before any module that reads process.env at import time
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import cron from 'node-cron';
 import { authController } from './src/router/auth.router';
 import { voteController } from './src/router/vote.router';
@@ -28,6 +29,7 @@ app.use(
 	})
 );
 app.use(express.json());
+app.use(cookieParser()); // session JWT rides in an httpOnly cookie
 
 app.get('/', (_req, res) => {
 	res.send('API is live');

@@ -57,8 +57,54 @@ function serializeBill(row) {
  *
  * GET /bills?congress=119&billType=hr&policyArea=Energy&q=energy&limit=20&offset=0
  */
+// The stage vocabulary deriveStage (ingestion/normalizeBill) can produce —
+// requests naming anything else are ignored rather than erroring.
+const BILL_STAGES = new Set([
+    'Introduced',
+    'In Committee',
+    'Passed House',
+    'Passed Senate',
+    'Passed Both Chambers',
+    'To President',
+    'Became Law',
+    'Failed',
+    'Vetoed',
+]);
+/** Facet counts for the filter menu: server truth about which facets are
+ *  non-empty and how big, so the client never gates options on loaded pages.
+ *  With a valid JWT the counts answer "how many are left for YOU" (unvoted),
+ *  matching what the personalized feed will actually show — the menu and the
+ *  feed must be answers to the same question. Guests get corpus counts. */
+billController.get('/bills/facets', async (req, res) => {
+    const congress = Number(req.query.congress ?? 119);
+    try {
+        const token = (0, auth_utils_1.tokenFromRequest)(req);
+        const payload = (0, auth_utils_1.getDataFromToken)(token);
+        const caller = payload?.username
+            ? await prisma_1.default.user.findUnique({ where: { username: payload.username } })
+            : null;
+        const where = { congress };
+        if (caller)
+            where.userVotes = { none: { userId: caller.id } };
+        const [total, rollCall, stageGroups] = await Promise.all([
+            prisma_1.default.bill.count({ where }),
+            prisma_1.default.bill.count({ where: { ...where, rollCalls: { some: {} } } }),
+            prisma_1.default.bill.groupBy({ by: ['stage'], where, _count: { _all: true } }),
+        ]);
+        const stages = {};
+        for (const group of stageGroups) {
+            if (group.stage)
+                stages[group.stage] = group._count._all;
+        }
+        return res.status(200).json({ total, rollCall, stages });
+    }
+    catch (error) {
+        console.error('Error fetching bill facets:', error);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+});
 billController.get('/bills', async (req, res) => {
-    const { congress, billType, policyArea, q } = req.query;
+    const { congress, billType, policyArea, q, filter } = req.query;
     const take = Math.min(Number(req.query.limit ?? 20), 100);
     const skip = Number(req.query.offset ?? 0);
     const where = {};
@@ -70,11 +116,44 @@ billController.get('/bills', async (req, res) => {
         where.policyArea = String(policyArea);
     if (q)
         where.title = { contains: String(q), mode: 'insensitive' }; // PG contains is case-sensitive (SQLite's wasn't)
+    // Facet filters are DB queries, not client-side subsets of loaded pages —
+    // each facet paginates over the full corpus independently. Dimensions are
+    // orthogonal params so they compose (stage + roll call + voted) for free.
+    const stages = String(req.query.stage ?? '')
+        .split(',')
+        .filter((s) => BILL_STAGES.has(s));
+    if (stages.length > 0)
+        where.stage = { in: stages };
+    if (req.query.hasRollCall === 'true')
+        where.rollCalls = { some: {} };
+    // Legacy aliases (pre-facet frontend) — keep one deploy cycle, then remove.
+    if (filter === 'passed')
+        where.stage = 'Became Law';
+    if (filter === 'roll-call')
+        where.rollCalls = { some: {} };
+    // Per-user facets: the server owns the votes, so it can exclude (discover
+    // feed) or select (My Bills) the caller's voted bills exactly — no reliance
+    // on client-side vote logs. Requires a valid JWT; 401 lets the client fall
+    // back to an unpersonalized query rather than a broken feed.
+    const voted = req.query.voted;
+    if (voted === 'exclude' || voted === 'only') {
+        const token = (0, auth_utils_1.tokenFromRequest)(req);
+        const payload = (0, auth_utils_1.getDataFromToken)(token);
+        const caller = payload?.username
+            ? await prisma_1.default.user.findUnique({ where: { username: payload.username } })
+            : null;
+        if (!caller)
+            return res.status(401).json({ message: 'Sign in required for voted filters' });
+        where.userVotes = voted === 'exclude' ? { none: { userId: caller.id } } : { some: { userId: caller.id } };
+    }
     try {
         const [bills, total] = await Promise.all([
             prisma_1.default.bill.findMany({
                 where,
-                orderBy: { latestActionDate: 'desc' },
+                // id tiebreaker: many bills share a latestActionDate, and Postgres gives
+                // no stable order among ties — without it, offset pages overlap and the
+                // client's dedup starves the infinite scroll.
+                orderBy: [{ latestActionDate: 'desc' }, { id: 'asc' }],
                 take,
                 skip,
                 include: BILL_INCLUDE,

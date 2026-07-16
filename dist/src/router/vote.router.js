@@ -8,25 +8,12 @@ const express_1 = require("express");
 const prisma_1 = __importDefault(require("../../prisma/prisma"));
 const zod_express_middleware_1 = require("zod-express-middleware");
 const zodSchema_1 = require("../zodSchema");
+// Shared middleware reads the session from the httpOnly cookie (with a Bearer
+// fallback) — this router used to keep a header-only copy.
 const auth_utils_1 = require("../utils/auth-utils");
 const voteController = (0, express_1.Router)();
 exports.voteController = voteController;
-const authenticate = async (req, res, next) => {
-    const token = req.headers.authorization?.split(' ')[1] || '';
-    const data = (0, auth_utils_1.getDataFromToken)(token);
-    if (!data) {
-        return res.status(401).json({ message: 'Invalid Token' });
-    }
-    const userFromJwt = await prisma_1.default.user.findUnique({
-        where: { username: data?.username },
-    });
-    if (!userFromJwt) {
-        return res.status(401).json({ message: 'User not found' });
-    }
-    req.user = userFromJwt;
-    next();
-};
-voteController.get('/votes', authenticate, async (req, res) => {
+voteController.get('/votes', auth_utils_1.authenticate, async (req, res) => {
     try {
         const votes = await prisma_1.default.vote.findMany({
             where: { userId: req.user?.id },
@@ -38,15 +25,19 @@ voteController.get('/votes', authenticate, async (req, res) => {
         return res.status(500).json({ message: 'Internal server error' });
     }
 });
-voteController.post('/votes', authenticate, (0, zod_express_middleware_1.validateRequest)({ body: zodSchema_1.voteSchema }), async (req, res) => {
+voteController.post('/votes', auth_utils_1.authenticate, (0, zod_express_middleware_1.validateRequest)({ body: zodSchema_1.voteSchema }), async (req, res) => {
     const { billId, vote, date } = req.body;
     const userId = req.user?.id;
     if (!userId) {
         return res.status(401).json({ message: 'User not authenticated' });
     }
     try {
-        const newVote = await prisma_1.default.vote.create({
-            data: {
+        // Upsert: a re-vote (double-click, stale tab, out-of-sync local log) must
+        // not 500 on the (userId, billId) unique — it just reaffirms/updates.
+        const newVote = await prisma_1.default.vote.upsert({
+            where: { userId_billId: { userId, billId } },
+            update: { vote, date: date },
+            create: {
                 userId,
                 billId,
                 vote,
@@ -68,8 +59,10 @@ voteController.post('/member_votes', (0, zod_express_middleware_1.validateReques
             billId,
         },
     });
+    // Member votes are global per (member, bill): every voter re-derives the same
+    // roll-call data, so a repeat recording is expected — a no-op, not an error.
     if (existingVote) {
-        return res.status(400).json({ message: 'Vote for this bill by this member already exists' });
+        return res.status(200).json(existingVote);
     }
     try {
         const newVote = await prisma_1.default.memberVote.create({

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config"); // load env before any module that reads process.env at import time
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
+const cookie_parser_1 = __importDefault(require("cookie-parser"));
 const node_cron_1 = __importDefault(require("node-cron"));
 const auth_router_1 = require("./src/router/auth.router");
 const vote_router_1 = require("./src/router/vote.router");
@@ -28,6 +29,7 @@ app.use((0, cors_1.default)({
     credentials: true,
 }));
 app.use(express_1.default.json());
+app.use((0, cookie_parser_1.default)()); // session JWT rides in an httpOnly cookie
 app.get('/', (_req, res) => {
     res.send('API is live');
 });

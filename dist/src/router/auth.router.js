@@ -91,9 +91,8 @@ authController.get('/auth/verify-email', async (req, res) => {
     return res.send('Email verified — you can close this tab and return to Delegator.');
 });
 authController.get('/logout', async (_req, res) => {
-    // Tokens are stored client-side; the server has no session to clear. The
-    // client should drop its token/user on logout. (Previously this called
-    // `localStorage`, which is undefined in Node and threw on every request.)
+    // The session rides in an httpOnly cookie — clearing it here is the logout.
+    res.clearCookie('token', { httpOnly: true, sameSite: 'lax' });
     res.status(200).json({ message: 'Logout successful' });
 });
 authController.post('/auth/login', (0, zod_express_middleware_1.validateRequest)(zodSchema_1.loginSchema), async (req, res) => {
@@ -110,8 +109,8 @@ authController.post('/auth/login', (0, zod_express_middleware_1.validateRequest)
     }
     const userInfo = (0, auth_utils_2.createUnsecuredInfo)(user);
     const token = (0, auth_utils_2.generateAccessToken)(user);
-    return res.status(200).json({
-        token,
-        userInfo,
-    });
+    // The JWT lives ONLY in an httpOnly cookie: the browser attaches it to API
+    // calls automatically, and page scripts can never read it (XSS containment).
+    res.cookie('token', token, auth_utils_2.SESSION_COOKIE_OPTIONS);
+    return res.status(200).json({ userInfo });
 });
