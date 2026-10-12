@@ -15,6 +15,14 @@ const billController = Router();
 const BILL_INCLUDE = { sponsor: true, _count: { select: { comments: true } } } as const;
 type BillWithSponsor = Prisma.BillGetPayload<{ include: typeof BILL_INCLUDE }>;
 
+/** Leadership reserves low numbers each Congress ("Reserved for the Speaker.",
+ *  "...Minority Leader.") — title-only placeholders with no summary, actions or
+ *  text. Hidden from the browse feed and its counts only — the rows stay in the DB,
+ *  so bill-number lookup (/bills/:id) and text search (?q=) still return them. */
+const NOT_RESERVED: Prisma.BillWhereInput = {
+	NOT: { title: { startsWith: 'Reserved for the', mode: 'insensitive' } },
+};
+
 /**
  * Map a stored Bill row into the congress.gov-ish shape the frontend already
  * consumes, so the app can read pre-assembled bills from our DB instead of
@@ -84,7 +92,7 @@ billController.get('/bills/facets', async (req, res) => {
 		const caller = payload?.username
 			? await prisma.user.findUnique({ where: { username: payload.username } })
 			: null;
-		const where: Prisma.BillWhereInput = { congress };
+		const where: Prisma.BillWhereInput = { congress, ...NOT_RESERVED };
 		if (caller) where.userVotes = { none: { userId: caller.id } };
 		const [total, rollCall, stageGroups] = await Promise.all([
 			prisma.bill.count({ where }),
@@ -107,7 +115,8 @@ billController.get('/bills', async (req, res) => {
 	const take = Math.min(Number(req.query.limit ?? 20), 100);
 	const skip = Number(req.query.offset ?? 0);
 
-	const where: Prisma.BillWhereInput = {};
+	// Browsing hides reserved placeholders; an explicit text search still finds them.
+	const where: Prisma.BillWhereInput = q ? {} : { ...NOT_RESERVED };
 	if (congress) where.congress = Number(congress);
 	if (billType) where.billType = String(billType).toLowerCase();
 	if (policyArea) where.policyArea = String(policyArea);
