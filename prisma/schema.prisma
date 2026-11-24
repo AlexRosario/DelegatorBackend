@@ -73,6 +73,7 @@ model Member {
   rollCallVotes RollCallVote[]
   sponsoredBills Bill[]       @relation("BillSponsor")
   contactMessages ContactMessage[]
+  feedSource     FeedSource?
 }
 
 model FieldOffice {
@@ -275,4 +276,90 @@ model MemberDonorCache {
   cycle      Int
   payload    Json
   fetchedAt  DateTime @default(now())
+}
+
+//
+// ==========================
+// The Wire (curated social feed) / The Mill (submitted creators, later)
+// ==========================
+enum SocialPlatform {
+  BLUESKY
+  YOUTUBE
+  INSTAGRAM
+  X
+  FACEBOOK
+  THREADS
+  MASTODON
+}
+
+enum FeedSourceKind {
+  MEMBER
+  AGENCY
+  ORGANIZATION
+  CREATOR
+}
+
+enum FeedLane {
+  WIRE
+  MILL
+}
+
+// A person or organization behind one or more social accounts. Ratings will
+// attach here (not to an account) so a source can't escape its record by
+// switching platforms or handles.
+model FeedSource {
+  id        Int            @id @default(autoincrement())
+  slug      String         @unique // "member-R000600", "org-propublica"
+  name      String
+  kind      FeedSourceKind
+  lane      FeedLane       @default(WIRE)
+  memberId  String?        @unique
+  member    Member?        @relation(fields: [memberId], references: [id])
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  accounts  SocialAccount[]
+
+  @@index([lane, kind, active])
+}
+
+// Accounts are stored for every platform we know about; only platforms with
+// an ingester (Bluesky, YouTube today) actually pull posts.
+model SocialAccount {
+  id            Int            @id @default(autoincrement())
+  sourceId      Int
+  source        FeedSource     @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  platform      SocialPlatform
+  handle        String? // display handle; can change
+  platformId    String? // stable id: YouTube channel id, Bluesky DID, X/IG numeric id
+  url           String?
+  lastFetchedAt DateTime?
+  lastError     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  posts         SocialPost[]
+
+  @@unique([sourceId, platform])
+  @@unique([platform, platformId])
+}
+
+model SocialPost {
+  id             Int           @id @default(autoincrement())
+  accountId      Int
+  account        SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  platformPostId String
+  url            String
+  title          String? // YouTube video title
+  text           String // post body, caption, or video description
+  mediaUrl       String? // first image or video thumbnail
+  postedAt       DateTime
+  likeCount      Int?
+  commentCount   Int?
+  repostCount    Int?
+  viewCount      Int?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([accountId, platformPostId])
+  @@index([postedAt, id])
 }

@@ -3,11 +3,12 @@
 	"version": "1.0.0",
 	"main": "index.js",
 	"engines": {
-		"node": ">=20"
+		"node": "24.x"
 	},
 	"scripts": {
 		"build": "tsc && prisma generate",
 		"dev": "ts-node server.ts",
+		"prestart": "npm run build",
 		"start": "prisma migrate deploy && node dist/server.js",
 		"prisma:generate": "prisma generate",
 		"migrate:dev": "prisma migrate dev",
@@ -18,7 +19,11 @@
 		"ingest:members:dev": "ts-node src/workers/dailyMemberIngest.ts",
 		"ingest:backfill": "npm run build && node dist/src/workers/backfillBills.js",
 		"reconcile:delegations": "npm run build && node dist/src/workers/reconcileDelegations.js",
-		"backfill:rollcalls": "ts-node src/workers/backfillRollCalls.ts"
+		"backfill:rollcalls": "ts-node src/workers/backfillRollCalls.ts",
+		"wire:sync": "npm run build && node dist/src/workers/wireSync.js",
+		"wire:sync:dev": "ts-node src/workers/wireSync.ts",
+		"wire:ingest": "npm run build && node dist/src/workers/wireIngest.js",
+		"wire:ingest:dev": "ts-node src/workers/wireIngest.ts"
 	},
 	"keywords": [],
 	"author": "",
@@ -57,9 +62,17 @@
 		"node-cron": "^4.5.0",
 		"node-fetch": "^2.7.0",
 		"nodemon": "^3.1.10",
-		"openai": "^5.9.0",
+		"openai": "^7.62.0",
 		"tsconfig-paths": "^4.2.0",
-		"zod": "^3.25.67",
-		"zod-express-middleware": "^1.4.0"
+		"zod": "^4.6.7",
+		"zod-express-middleware": "^0.1.1"
+	},
+	"allowScripts": {
+		"@prisma/client@6.10.1": true,
+		"@prisma/engines@6.10.1": true,
+		"prisma@6.10.1": true,
+		"bcrypt@6.0.0": true,
+		"better-sqlite3@12.6.0": true,
+		"fsevents@2.3.3": true
 	}
 }

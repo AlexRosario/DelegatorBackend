@@ -23,7 +23,7 @@ export const registerSchema = {
 				.required(),
 			// Constituent self-attestation is required (CWC anti-astroturf posture).
 			attest: z.literal(true, {
-				errorMap: () => ({ message: 'You must attest that you reside at this address' }),
+				error: 'You must attest that you reside at this address',
 			}),
 		})
 		.required(),
