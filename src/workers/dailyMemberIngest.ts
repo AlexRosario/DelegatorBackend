@@ -9,7 +9,7 @@ import { runIngestion } from '../ingestion/runIngestion';
 export async function runDailyMemberIngest(opts: { maxPages?: number } = {}) {
 	return runIngestion('daily-members', async () => {
 		const result = await ingestMembersBatch({ maxPages: opts.maxPages });
-		return { ...result, message: `roster processed=${result.processed} failed=${result.failed}` };
+		return { ...result, message: `roster processed=${result.processed} failed=${result.failed} retired=${result.retired ?? 'skipped'}` };
 	});
 }
 

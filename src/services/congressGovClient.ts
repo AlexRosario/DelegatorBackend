@@ -175,3 +175,22 @@ export async function getMembers(params: { offset?: number; limit?: number; curr
 export async function getMember(bioguideId: string) {
 	return fetchCongress(`/member/${bioguideId}`);
 }
+
+/**
+ * Everyone (past and present) congress.gov lists for a state, or for one House
+ * district number in it. currentMember=false means "don't restrict to current";
+ * current members are still included. At-large seats are district 0.
+ */
+export async function getMembersByLocation(stateCode: string, district?: number): Promise<any[]> {
+	const path = district === undefined ? `/member/${stateCode}` : `/member/${stateCode}/${district}`;
+	const all: any[] = [];
+	let offset = 0;
+	for (;;) {
+		const data = await fetchCongress(path, { limit: 250, offset, currentMember: 'false' });
+		const page = data.members ?? [];
+		all.push(...page);
+		if (!data.pagination?.next || page.length === 0) break;
+		offset += page.length;
+	}
+	return all;
+}

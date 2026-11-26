@@ -86,11 +86,28 @@ export async function resolveDelegation(address: {
 	if (!resolution) return null;
 
 	const [houseRep, senators] = await Promise.all([
+		// The roster ingest retires departed members, so normally exactly one
+		// current House rep / two senators match. The ordering makes any transient
+		// overlap (e.g. a successor ingested before a retirement pass completes)
+		// resolve deterministically to the most recently roster-refreshed row.
 		prisma.member.findFirst({
-			where: { currentMember: true, chamber: 'House', state: resolution.state, district: resolution.district },
+			where: {
+				currentMember: true,
+				chamber: 'House',
+				state: resolution.state,
+				// Census numbers at-large seats 0 and non-voting delegates (DC,
+				// territories) 98; the congress.gov roster stores both with no
+				// district. Match either form so those users get their House member.
+				...(resolution.district === 0 || resolution.district === 98
+					? { OR: [{ district: null }, { district: resolution.district }] }
+					: { district: resolution.district }),
+			},
+			orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
 		}),
 		prisma.member.findMany({
 			where: { currentMember: true, chamber: 'Senate', state: resolution.state },
+			orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+			take: 2,
 		}),
 	]);
 

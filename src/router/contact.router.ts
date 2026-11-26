@@ -24,7 +24,8 @@ const contactMessageSchema = z.object({
 contactController.post('/contact/messages', authenticate, validateRequest({ body: contactMessageSchema }), async (req, res) => {
 	const user = await prisma.user.findUnique({
 		where: { id: req.user!.id },
-		include: { members: { select: { id: true } } },
+		// Current members only: past reps stay in history but aren't contactable as yours.
+		include: { members: { where: { currentMember: true }, select: { id: true } } },
 	});
 	if (!user) return res.status(401).json({ message: 'User not found' });
 

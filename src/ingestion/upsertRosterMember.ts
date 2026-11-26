@@ -2,7 +2,8 @@ import { normalizeMember } from './normalizeMember';
 
 // The roster (congress.gov) is the SOLE writer of these core member fields, so
 // update writes them all. It deliberately never touches 5Calls-owned data
-// (reason, area, fieldOffices) — those have a different writer.
+// (reason, area, fieldOffices) — legacy 5Calls values written by the removed
+// POST /members route; preserved as-is, no current writer.
 export async function upsertRosterMember(prisma: any, rawMember: any) {
 	const m = normalizeMember(rawMember);
 

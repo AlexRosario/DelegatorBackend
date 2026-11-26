@@ -59,6 +59,10 @@ authController.post('/auth/register', validateRequest(registerSchema), async (re
 			members: {
 				connect: memberIds.map((id: string) => ({ id })),
 			},
+			// Open a rep-history span for each, so "My past reps" works later.
+			repTerms: {
+				create: memberIds.map((memberId: string) => ({ memberId, startedAt: new Date() })),
+			},
 		},
 	});
 	if (!newUser) {

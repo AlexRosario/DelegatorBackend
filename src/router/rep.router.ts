@@ -3,6 +3,7 @@ import 'express-async-errors';
 import prisma from '../../prisma/prisma';
 import { authenticate } from '../utils/auth-utils';
 import { getDonorSummary } from '../services/donorService';
+import { COVERAGE_FROM_YEAR, getSeatHistory, resolveState, toCongressDistrict, type Seat } from '../services/seatHistory';
 
 const repController = Router();
 
@@ -16,7 +17,9 @@ repController.get('/members/mine', authenticate, async (req, res) => {
 	try {
 		const userWithMembers = await prisma.user.findUnique({
 			where: { id: req.user!.id },
-			include: { members: true },
+			// Reconcile normally drops departed members within minutes of the roster
+			// pass; this filter guarantees they never show here in the meantime.
+			include: { members: { where: { currentMember: true } } },
 		});
 		if (!userWithMembers) {
 			return res.status(404).json({ message: 'User not found' });
@@ -25,6 +28,84 @@ repController.get('/members/mine', authenticate, async (req, res) => {
 	} catch (error) {
 		console.error('Error fetching own members:', error);
 		res.status(500).json({ message: 'Internal server error' });
+	}
+});
+// "My past reps": members who used to represent the caller. One entry per
+// member (their most recent closed span), newest first, excluding anyone who
+// represents the caller again now. startedAt is null for links that predate
+// rep history.
+repController.get('/members/mine/past', authenticate, async (req, res) => {
+	try {
+		const userId = req.user!.id;
+		const [closed, open] = await Promise.all([
+			prisma.userRepTerm.findMany({
+				where: { userId, endedAt: { not: null } },
+				orderBy: [{ endedAt: 'desc' }, { id: 'desc' }],
+				include: { member: true },
+			}),
+			prisma.userRepTerm.findMany({ where: { userId, endedAt: null }, select: { memberId: true } }),
+		]);
+		const current = new Set(open.map((t) => t.memberId));
+		const seen = new Set<string>();
+		const past = [];
+		for (const term of closed) {
+			if (current.has(term.memberId) || seen.has(term.memberId)) continue;
+			seen.add(term.memberId);
+			past.push({
+				member: term.member,
+				startedAt: term.startedAt,
+				endedAt: term.endedAt,
+				reason: term.endReason?.toLowerCase() ?? 'other',
+			});
+		}
+		res.json(past);
+	} catch (error) {
+		console.error('Error fetching past members:', error);
+		res.status(500).json({ message: 'Internal server error' });
+	}
+});
+// "Past District Reps": everyone who has held the caller's current House seat
+// (by district number) or their state's Senate seats, from congress.gov, back to
+// COVERAGE_FROM_YEAR. Current holders excluded. See services/seatHistory.ts.
+repController.get('/members/mine/district-history', authenticate, async (req, res) => {
+	const user = await prisma.user.findUnique({
+		where: { id: req.user!.id },
+		select: {
+			district: true,
+			derivedState: true,
+			state: true,
+			members: { where: { currentMember: true }, select: { id: true } },
+		},
+	});
+	if (!user) return res.status(404).json({ message: 'User not found' });
+
+	const state = resolveState(user.derivedState) ?? resolveState(user.state);
+	if (!state) {
+		return res.json({ seats: { house: null, senate: null }, coverageFromYear: COVERAGE_FROM_YEAR, terms: [] });
+	}
+	const houseSeat: Seat | null =
+		user.district === null
+			? null
+			: { chamber: 'House', stateCode: state.code, stateName: state.name, district: toCongressDistrict(user.district) };
+	const senateSeat: Seat = { chamber: 'Senate', stateCode: state.code, stateName: state.name };
+	const current = new Set(user.members.map((m) => m.id));
+
+	try {
+		const [house, senate] = await Promise.all([
+			houseSeat ? getSeatHistory(houseSeat, current) : Promise.resolve([]),
+			getSeatHistory(senateSeat, current),
+		]);
+		return res.json({
+			seats: {
+				house: houseSeat && houseSeat.chamber === 'House' ? { state: state.name, district: houseSeat.district } : null,
+				senate: { state: state.name },
+			},
+			coverageFromYear: COVERAGE_FROM_YEAR,
+			terms: [...house, ...senate].sort((a, b) => b.endCongress - a.endCongress || b.startCongress - a.startCongress),
+		});
+	} catch (error) {
+		console.error('Error fetching district history:', error);
+		return res.status(502).json({ message: 'Could not load seat history from congress.gov' });
 	}
 });
 // Campaign-finance summary for a member (FEC data, cached server-side).
@@ -73,40 +154,6 @@ repController.get('/members', async (req, res) => {
 		return res.status(200).json(reps);
 	} catch (error) {
 		console.error('Error fetching representatives:', error);
-		return res.status(500).json({ message: 'Internal server error' });
-	}
-});
-
-repController.post('/members', async (req, res) => {
-	const { id, name, phone, url, photoURL, party, state, district, reason, area, fieldOffices } = req.body;
-	try {
-		const existingMember = await prisma.member.findUnique({ where: { id } });
-
-		if (existingMember) {
-			return res.status(200).json(existingMember);
-		}
-		// Fallback create: a 5Calls rep not (yet) in the congress.gov roster. Tag
-		// it accordingly; the daily roster ingest will enrich/own it if present there.
-		const newRep = await prisma.member.create({
-			data: {
-				id,
-				name,
-				phone,
-				url,
-				photoURL,
-				party,
-				state,
-				district: district ?? null, // optional, since senators don't have it
-				reason,
-				area,
-				source: 'fivecalls',
-				currentMember: false,
-				fieldOffices: fieldOffices ? { create: fieldOffices } : undefined,
-			},
-		});
-		return res.status(201).json(newRep);
-	} catch (error) {
-		console.error('Error creating representative:', error);
 		return res.status(500).json({ message: 'Internal server error' });
 	}
 });

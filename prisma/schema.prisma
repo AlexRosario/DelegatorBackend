@@ -33,7 +33,8 @@ model User {
   emailVerifyToken     String?
   attestedAt           DateTime? // constituent self-attestation at registration
 
-  members      Member[] @relation("UserMembers")
+  members      Member[] @relation("UserMembers") // CURRENT delegation only
+  repTerms     UserRepTerm[]                    // full history, incl. past reps
   votes        Vote[]
   comments     BillComment[]
   contactMessages ContactMessage[]
@@ -74,6 +75,7 @@ model Member {
   sponsoredBills Bill[]       @relation("BillSponsor")
   contactMessages ContactMessage[]
   feedSource     FeedSource?
+  repTerms       UserRepTerm[]
 }
 
 model FieldOffice {
@@ -362,4 +364,31 @@ model SocialPost {
 
   @@unique([accountId, platformPostId])
   @@index([postedAt, id])
+}
+
+// ==========================
+// Rep history ("My past reps")
+// ==========================
+// One span per stretch of time a member represented a user. `_UserMembers`
+// stays the current delegation (contact gate, constituent-votes read it); this
+// table is written alongside it on every link change and keeps closed spans.
+model UserRepTerm {
+  id        Int           @id @default(autoincrement())
+  userId    Int
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  startedAt DateTime?     // null = link predates this table (backfilled)
+  endedAt   DateTime?     // null = still this user's rep
+  endReason RepEndReason? // set when endedAt is
+
+  @@index([userId, endedAt])
+  @@index([memberId])
+}
+
+enum RepEndReason {
+  LEFT_OFFICE  // member no longer on the congress.gov roster
+  REDISTRICTED // member still serving; user's district/state changed under them
+  MOVED        // reserved: user changed address (no address-edit flow exists yet)
+  OTHER        // roster/district correction or anything unclassified
 }

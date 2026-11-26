@@ -2,6 +2,7 @@ import 'dotenv/config';
 import prisma from '../../prisma/prisma';
 import { resolveDelegation } from '../services/districtResolver';
 import { runIngestion } from '../ingestion/runIngestion';
+import { applyDelegationChange, planDelegationChange } from '../services/repTerms';
 
 /** Re-verify user→delegation mappings that are stale (default 30 days). */
 const STALE_DAYS = 30;
@@ -11,7 +12,9 @@ const STALE_DAYS = 30;
  * Re-resolves users whose mapping:
  *  - was never Census-verified (fallback/unresolved signups, Census outages),
  *  - includes a member who is no longer in office (vacancy, special election,
- *    resignation — the roster ingest flips `currentMember`),
+ *    resignation — after a complete pass, the roster ingest sets
+ *    `currentMember=false` on anyone congress.gov stopped listing; see
+ *    retireDepartedMembers in ingestion/ingestMembersBatch),
  *  - or is simply stale (redistricting, member changes we didn't catch).
  * Runs after the nightly member ingest so the roster is fresh first.
  */
@@ -29,31 +32,73 @@ export async function runDelegationReconcile() {
 					{ members: { some: { currentMember: false } } },
 				],
 			},
-			select: { id: true, username: true, street: true, city: true, state: true, zipcode: true },
+			select: {
+				id: true,
+				username: true,
+				street: true,
+				city: true,
+				state: true,
+				zipcode: true,
+				district: true,
+				derivedState: true,
+				members: { select: { id: true, currentMember: true } },
+			},
 		});
 
 		let updated = 0;
 		let unresolved = 0;
+		let pruned = 0;
 		for (const user of users) {
 			const delegation = await resolveDelegation(user);
-			if (!delegation || delegation.memberIds.length === 0) {
-				unresolved++; // keep the existing mapping — a failed lookup must not strip members
+			const resolved = delegation && delegation.memberIds.length > 0 ? delegation : null;
+			// Classify against the STORED district/links, before anything is overwritten.
+			const plan = planDelegationChange({
+				linked: user.members,
+				oldDistrict: user.district,
+				oldState: user.derivedState,
+				next: resolved
+					? {
+							memberIds: resolved.memberIds,
+							district: resolved.resolution.district,
+							state: resolved.resolution.state,
+						}
+					: null,
+			});
+
+			if (!resolved) {
+				// A failed or empty lookup must not strip current members, but members
+				// who left office still move to the user's past reps (this also covers
+				// DC/territory users whose only member left, with no successor yet).
+				unresolved++;
+				if (plan.remove.length > 0) {
+					await prisma.$transaction((tx) => applyDelegationChange(tx, user.id, plan));
+					pruned++;
+				}
 				continue;
 			}
-			await prisma.user.update({
-				where: { id: user.id },
-				data: {
-					district: delegation.resolution.district,
-					derivedState: delegation.resolution.state,
-					delegationVerifiedAt: new Date(),
-					verificationSource: 'census+roster',
-					members: { set: delegation.memberIds.map((id) => ({ id })) },
-				},
+
+			await prisma.$transaction(async (tx) => {
+				await applyDelegationChange(tx, user.id, plan);
+				await tx.user.update({
+					where: { id: user.id },
+					data: {
+						district: resolved.resolution.district,
+						derivedState: resolved.resolution.state,
+						delegationVerifiedAt: new Date(),
+						verificationSource: 'census+roster',
+					},
+				});
 			});
 			updated++;
 		}
 
-		return { checked: users.length, updated, unresolved, message: `checked=${users.length} updated=${updated} unresolved=${unresolved}` };
+		return {
+			checked: users.length,
+			updated,
+			unresolved,
+			pruned,
+			message: `checked=${users.length} updated=${updated} unresolved=${unresolved} pruned=${pruned}`,
+		};
 	});
 }
 
